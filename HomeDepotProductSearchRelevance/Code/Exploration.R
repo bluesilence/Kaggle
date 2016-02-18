@@ -1,0 +1,18 @@
+setwd('D:/Kaggle/HomeDepotProductSearchRelevance/')
+install.packages('data.table')
+install.packages('stringi')
+install.packages('ggplot2', dependencies = T)
+install.packages('plotly')
+install.packages('readr')
+install.packages('lattice')
+install.packages('xgboost')
+install.packages('devtools')
+devtools::install_github("JohnLangford/vowpal_wabbit", subdir = "R/r.vw")
+
+library(data.table)
+library(ggplot2)
+library(plotly)
+library(lattice)
+library(r.vw)
+
+train.raw <- fread('Data/Raw/train.csv', sep=",", stringsAsFactors=FALSE)
