@@ -5,11 +5,18 @@
 library(ggplot2) # Data visualization
 library(readr) # CSV file I/O, e.g. the read_csv function
 library(xgboost)
+require(caret)
+require(corrplot)
+require(Rtsne)
+require(knitr)
+knitr::opts_chunk$set(cache=TRUE)
+
 # Input data files are available in the "../input/" directory.
 # For example, running this (by clicking run or pressing Shift+Enter) will list the files in the input directory
 
-setwd('D:/Kaggle/BNPParibasCardifClaimsManagement')
+setwd('D:/Kaggle-bak/BNPParibasCardifClaimsManagement')
 
+### Preprocessing
 # Any results you write to the current directory are saved as output.
 train <- read.table("data/raw/train.csv", header=T, sep=",") 
 y <- train[, 'target']
@@ -19,6 +26,7 @@ train[is.na(train)] <- -1
 test[is.na(test)] <- -1
 
 # Find factor variables and translate to numeric
+# Because XGBoost gradient booster only recognizes numeric data
 f <- c()
 for(i in 1:ncol(train)) {
   if (is.factor(train[, i])) f <- c(f, i)
@@ -37,6 +45,12 @@ for (col in f) {
 train <- ttrain[1:nrow(train), ]
 test <- ttrain[(nrow(train)+1):nrow(ttrain), ]
 
+## Check for feature's variance
+zero.var = nearZeroVar(train, saveMetrics=TRUE)
+zero.var
+# V3, V38, V74 have nzv == TRUE, indicating that they have near zero variance
+
+### Run train and test
 doTest <- function(y, train, test, param0, iter) {
   n <- nrow(train)
   xgtrain <- xgb.DMatrix(as.matrix(train), label = y)
