@@ -6,6 +6,8 @@ library(ggplot2) # Data visualization
 library(readr) # CSV file I/O, e.g. the read_csv function
 library(xgboost)
 library(data.table)
+
+require(mlbench)
 require(caret)
 require(corrplot)
 require(Rtsne)
@@ -68,7 +70,28 @@ train.features.stats.byLabel <- rbind(data.table("Label" = 1, train.pos.feature.
 
 write.csv(train.features.stats.byLabel, "data/intermediate/train.features.stats.byLabel_V22Transformed.csv", row.names=T, quote=F)
 
+## Find highly correlated features
+# calculate correlation matrix
+# correlationMatrix <- cor(train)
+# # summarize the correlation matrix
+# print(correlationMatrix)
+# # find attributes that are highly corrected (ideally > 0.75)
+# # WARNING: Too slow!
+# highlyCorrelated <- findCorrelation(correlationMatrix, cutoff = 0.95)
+# # print indexes of highly correlated attributes
+# print(highlyCorrelated)
 
+## Rank features by importance
+# prepare training scheme
+control <- trainControl(method="repeatedcv", number=10, repeats=3)
+# train the model using Random Forest
+model <- train(y ~ ., data = train.label, method = "rf", preProcess = "scale", trControl = control)
+# estimate variable importance
+importance <- varImp(model, scale = FALSE)
+# summarize importance
+print(importance)
+# plot importance
+plot(importance)
 
 ## Check for feature's variance
 zero.var = nearZeroVar(train, saveMetrics=TRUE)
@@ -78,7 +101,7 @@ zero.var
 train.reduced <- train[, -4][, -38][, -73]
 head(train.reduced)
 
-
+# Plot correlations (picture is too large!)
 featurePlot(train[, -1], y, "scatter")
 
 corrplot.mixed(cor(train), lower="circle", upper="color", 
