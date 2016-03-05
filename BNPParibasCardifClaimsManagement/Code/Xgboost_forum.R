@@ -72,26 +72,26 @@ write.csv(train.features.stats.byLabel, "data/intermediate/train.features.stats.
 
 ## Find highly correlated features
 # calculate correlation matrix
-# correlationMatrix <- cor(train)
-# # summarize the correlation matrix
-# print(correlationMatrix)
-# # find attributes that are highly corrected (ideally > 0.75)
-# # WARNING: Too slow!
-# highlyCorrelated <- findCorrelation(correlationMatrix, cutoff = 0.95)
-# # print indexes of highly correlated attributes
-# print(highlyCorrelated)
+correlationMatrix <- cor(train)
+# summarize the correlation matrix
+print(correlationMatrix)
+# find attributes that are highly corrected (ideally > 0.75)
+highlyCorrelated <- findCorrelation(correlationMatrix, cutoff = 0.95)
+# print indexes of highly correlated attributes
+print(highlyCorrelated)
 
 ## Rank features by importance
+# # WARNING: Too slow!
 # prepare training scheme
-control <- trainControl(method="repeatedcv", number=10, repeats=3)
-# train the model using Random Forest
-model <- train(y ~ ., data = train.label, method = "rf", preProcess = "scale", trControl = control)
-# estimate variable importance
-importance <- varImp(model, scale = FALSE)
-# summarize importance
-print(importance)
-# plot importance
-plot(importance)
+# control <- trainControl(method="repeatedcv", number=10, repeats=3)
+# # train the model using Random Forest
+# model <- train(y ~ ., data = train.label, method = "rf", preProcess = "scale", trControl = control)
+# # estimate variable importance
+# importance <- varImp(model, scale = FALSE)
+# # summarize importance
+# print(importance)
+# # plot importance
+# plot(importance)
 
 ## Check for feature's variance
 zero.var = nearZeroVar(train, saveMetrics=TRUE)
