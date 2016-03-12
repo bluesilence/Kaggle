@@ -1,7 +1,7 @@
 # Script by Tim Esler for Paribas Kaggle competition using XGBoost.
 # XG parameters have been pre-optimised for the minimal amount of feature
 # engineering used (recoding of NAs and removal of correlated vars).
-
+library(data.table)
 library(readr)
 library(xgboost)
 
@@ -78,6 +78,9 @@ clf <- xgb.train(   params              = param,
                     maximize            = FALSE
                 )
 
+LL <- clf$bestScore
+cat(paste("Best AUC: ", LL,"\n", sep=""))
+
 inputs <- c("nrounds" = clf$bestInd,
             "eta" = param$eta,
             "max_depth" = param$max_depth,
@@ -97,9 +100,6 @@ pred2 <- predict(clf,
                  ntreelimit = clf$bestInd)
 
 submission <- data.frame(ID = test$ID, PredictedProb = pred1)
-
-LL <- clf$bestScore
-cat(paste("Best AUC: ", LL,"\n", sep=""))
 
 cat("Create submission file\n")
 time <- format(Sys.time(),"%Y%m%dT%H%M%S")
