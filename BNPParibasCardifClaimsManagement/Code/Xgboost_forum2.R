@@ -1,6 +1,8 @@
 # Script by Tim Esler for Paribas Kaggle competition using XGBoost.
 # XG parameters have been pre-optimised for the minimal amount of feature
 # engineering used (recoding of NAs and removal of correlated vars).
+setwd('C:/Users/quinzh/Documents/src/Kaggle/BNPParibasCardifClaimsManagement')
+
 library(data.table)
 library(readr)
 library(xgboost)
@@ -8,7 +10,7 @@ library(xgboost)
 # Run settings
 md <- 13
 ss <- 0.96
-cs <- 0.3125
+cs <- 0.4
 mc <- 5
 np <- 1
 
@@ -103,6 +105,12 @@ pca.2$loadings
 ttrain$pca.2.Comp.1 <- pca.2$scores[ , "Comp.1"]
 ttrain$pca.2.Comp.2 <- pca.2$scores[ , "Comp.2"]
 
+## Analysis on v47, v110
+# Lambda test
+# library(rapportools)
+# lambda.test(table(ttrain$v47, ttrain$v110), direction = 2)
+# table(ttrain$v47, ttrain$v110)
+
 ## Analysis on v71, v79: Worse!
 # table(ttrain$v71)
 # table(ttrain$v79)
@@ -137,7 +145,7 @@ test <- ttrain[(nrow(train) + 1):nrow(ttrain), ]
 train.label <- data.table(train, y)
 
 cat("Sample data for early stopping\n")
-h <- sample(nrow(train.label), 2500)
+h <- sample(nrow(train.label), 1500)
 
 cat("Get feature names\n")
 feature.names <- names(train.label)[c(2:(ncol(train.label)-1))] # Remove Id and y
@@ -156,8 +164,10 @@ tra <- subset(train.label, , feature.names)
 
 dval <- xgb.DMatrix(data = data.matrix(tra[h, ]), label = train.label$y[h])
 dtrain <- xgb.DMatrix(data = data.matrix(tra[-h, ]), label = train.label$y[-h])
+dall <- xgb.DMatrix(data = data.matrix(tra), label = train.label$y)
 
-watchlist<-list(val = dval,train = dtrain)
+watchlist <- list(val = dval, train = dtrain)
+watchlist.all <- list(train = dall)
 
 param <- list(  objective           = "binary:logistic", 
                 booster             = "gbtree",
@@ -173,7 +183,7 @@ param <- list(  objective           = "binary:logistic",
 nrounds <- 1600 # CHANGE TO >1500
 early.stop.round <- 300
 
-cat("Train model\n")
+cat("Train model with cv\n")
 clf <- xgb.train(   params              = param, 
                     data                = dtrain, 
                     nrounds             = nrounds, 
@@ -186,6 +196,30 @@ clf <- xgb.train(   params              = param,
 LL <- clf$bestScore
 cat(paste("Best AUC: ", LL,"\n", sep=""))
 
+# xgb.cv
+bst.cv <- xgb.cv(param = param,
+                 data = dall,
+                 label = y, 
+                 nfold = 5,
+                 nrounds = nrounds,
+                 prediction = TRUE,
+                 verbose = 1)
+
+min.merror.idx = which.min(bst.cv$dt[, test.merror.mean]) 
+min.merror.idx
+bst.cv$dt[min.merror.idx,]
+
+clf.all <- xgb.train(   params              = param, 
+                        data                = dall, 
+                        nrounds             = clf$bestInd,
+                        watchlist           = watchlist.all,
+                        verbose             = 1,  #1
+                        maximize            = FALSE
+                    )
+
+LL.all <- clf.all$bestScore
+cat(paste("Best AUC on all training data: ", LL.all, "\n", sep=""))
+
 inputs <- c("nrounds" = clf$bestInd,
             "eta" = param$eta,
             "max_depth" = param$max_depth,
@@ -196,7 +230,7 @@ inputs <- c("nrounds" = clf$bestInd,
 print(inputs)
 
 cat("Calculate predictions\n")
-pred1 <- predict(clf,
+pred1 <- predict(clf.all,
                  data.matrix(test[, feature.names]),
                  ntreelimit = clf$bestInd)
 
