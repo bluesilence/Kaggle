@@ -1,7 +1,7 @@
 # Script by Tim Esler for Paribas Kaggle competition using XGBoost.
 # XG parameters have been pre-optimised for the minimal amount of feature
 # engineering used (recoding of NAs and removal of correlated vars).
-setwd('C:/Users/quinzh/Documents/src/Kaggle/BNPParibasCardifClaimsManagement')
+setwd('D:/Kaggle/BNPParibasCardifClaimsManagement')
 
 library(data.table)
 library(readr)
@@ -10,7 +10,7 @@ library(xgboost)
 # Run settings
 md <- 13
 ss <- 0.96
-cs <- 0.4
+cs <- 0.4 # 0.4
 mc <- 5
 np <- 1
 
@@ -136,6 +136,32 @@ ttrain$pca.2.Comp.2 <- pca.2$scores[ , "Comp.2"]
 #   }
 # }
 # ttrain$v79 <- sapply(ttrain$v79, ConvertSingularOnV79)
+
+## Feature Selection
+train <- ttrain[1:nrow(train), ]
+test <- ttrain[(nrow(train) + 1):nrow(ttrain), ]
+train.label <- data.table(train, y)
+ncol(train)
+
+library(FSelector)
+# Pearson Correlation
+weights.pearson <- linear.correlation(y ~ ., train.label)
+print(weights.pearson)
+top.pearson <- cutoff.k(weights.pearson, 130)
+print(top.pearson)
+# Spearman Correlation
+weights.spearman <- rank.correlation(y ~ ., train.label)
+print(weights.spearman)
+top.spearman <- cutoff.k(weights.spearman, 130)
+print(top.spearman)
+# Features not important in Pearson
+setdiff(names(train), top.pearson)
+
+# Features not important in Spearman
+setdiff(names(train), top.spearman)
+
+# Features important in both Pearson and Spearman
+intersect(top.pearson, top.spearman)
 
 ### End of Exploratory Analysis
 
