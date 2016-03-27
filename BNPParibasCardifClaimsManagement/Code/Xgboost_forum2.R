@@ -8,10 +8,10 @@ library(readr)
 library(xgboost)
 
 # Run settings
-md <- 13
-ss <- 0.96
-cs <- 0.4 # 0.4
-mc <- 5
+md <- 12 # 12: BEST
+ss <- 0.76 # 0.76: BEST
+mc <- 7 # 7: BEST -> 0.456036
+cs <- 0.45 # 0.45 -> 0.455435
 np <- 1
 
 cat("Set seed\n")
@@ -22,9 +22,9 @@ cat("Read the train and test data\n")
 train <- read.table("data/raw/train.csv", header = T, sep = ",") 
 y <- train[, 'target']
 train <- train[, -2]
-test <- read.table("data/raw/test.csv", header = T, sep = ",") 
-train[is.na(train)] <- -997
-test[is.na(test)] <- -997
+test <- read.table("data/raw/test.csv", header = T, sep = ",")
+
+
 
 # Find factor variables and translate to numeric
 # Because XGBoost gradient booster only recognizes numeric data
@@ -42,6 +42,20 @@ ttrain <- rbind(train, test)
 for (col in f) {
   ttrain[, col] <- as.numeric(ttrain[, col]) 
 }
+
+### Set all NA to the mean of nonNA values in that column
+head(ttrain)
+
+for (colIndex in 2:ncol(ttrain)) {
+  currCol <- ttrain[colIndex]
+  currCol.nonNA <- currCol[!is.na(currCol)]
+  print(currCol.nonNA)
+  colMean <- mean(currCol.nonNA)
+  print(colMean)
+  ttrain[colIndex][is.na(ttrain[colIndex])] <- colMean
+}
+
+head(ttrain)
 
 # V22 transformation: https://www.kaggle.com/c/bnp-paribas-cardif-claims-management/forums/t/18734/looks-like-a-nice-challenge
 # Very small improvement: 0.00014
@@ -144,45 +158,91 @@ train.label <- data.table(train, y)
 ncol(train)
 
 library(FSelector)
-# Pearson Correlation
+## Pearson Correlation
 weights.pearson <- linear.correlation(y ~ ., train.label)
 print(weights.pearson)
 top.pearson <- cutoff.k(weights.pearson, 130)
 print(top.pearson)
-# Spearman Correlation
+# Features not important in Pearson
+setdiff(names(train), top.pearson)
+
+## Spearman Correlation
 weights.spearman <- rank.correlation(y ~ ., train.label)
 print(weights.spearman)
 top.spearman <- cutoff.k(weights.spearman, 130)
 print(top.spearman)
-# Features not important in Pearson
-setdiff(names(train), top.pearson)
-
 # Features not important in Spearman
 setdiff(names(train), top.spearman)
 
-# Features important in both Pearson and Spearman
-intersect(top.pearson, top.spearman)
+## Information Gain
+weights.ig <- information.gain(y ~ ., train.label)
+print(weights.ig)
+top.ig <- cutoff.k(weights.ig, 130)
+# Features not important in Information Gain
+setdiff(names(train), top.ig)
 
+# Features important in both Pearson and Spearman and Information Gain
+intersect(intersect(top.pearson, top.spearman), top.ig)
+
+# Plot feature against y
+library(ggplot2)
+ggplot(data = train.label, aes(x = v125)) + geom_density() + facet_grid(y ~ .)
+
+## Plot v69 + v115
+train.label$sumv69andv115 <- train.label$v69 + train.label$v115
+# v69 + v115 ~= 20
+ggplot(data = train.label, aes(x = sumv69andv115, color = y)) + geom_density() + xlim(18, 22)
+cor(train.label$v69, train.label$v115)
+
+# Plot the sum against v131
+ggplot(data = train.label, aes(x = v131, y = sumv69andv115, color = y)) + geom_point()
+cor(train.label$sumv69andv115, train.label$v131)
+information.gain(v131 ~ sumv69andv115, train.label)
+# Remove v115 doesn't improve AUC, so keep it
+
+## Outlier Detection -- TOO SLOW!
+library(DMwR)
+# remove "Species", which is a categorical column
+iris2 <- iris[,1:4]
+outlier.scores <- lofactor(iris2, k=5)
+plot(density(outlier.scores))
+outliers <- order(outlier.scores, decreasing=T)[1:5]
+# who are outliers
+print(outliers)
 ### End of Exploratory Analysis
 
 ### Begin of Training
-train <- ttrain[1:nrow(train), ]
-test <- ttrain[(nrow(train) + 1):nrow(ttrain), ]
-train.label <- data.table(train, y)
-
 cat("Sample data for early stopping\n")
 h <- sample(nrow(train.label), 1500)
 
 cat("Get feature names\n")
-feature.names <- names(train.label)[c(2:(ncol(train.label)-1))] # Remove Id and y
 
 cat("Remove highly correlated features\n")
+# Removing all pearsonRemovals makes AUC worse
+#pearsonRemovals <- c("v22", "v42", "v49", "v120", "v126")
+pearsonRemovals <- c()
+spearmanRemovals <- c("v22", "v49", "v77", "v105")
+# None: 0.464669
+# v122 only: 0.464596
+# v125 only: 0.463621
+# v126 only: 0.4644
+# v127 only: 0.463639
+# v122 + v125: worse than either of them
+igRemovals <- c("v125") #"v122","v124","v125","v126","v127","pca.1.Comp.1")
+
 highCorrRemovals <- c("v8","v10","v23","v25","v34","v36","v37","v40","v46",
                       "v51","v53","v54","v63","v73","v81",
                       "v82","v89","v92","v95","v105","v107",
                       "v108","v109","v116","v117","v118",
-                      "v119","v123","v124","v128")
-feature.names <- feature.names[!(feature.names %in% highCorrRemovals)]
+                      "v119","v123","v124","v128",
+                      "sumv69andv115",
+                      "y")
+
+totalRemovals <- cbind(highCorrRemovals, pearsonRemovals, spearmanRemovals, igRemovals)
+
+feature.names <- names(train.label)[c(2:(ncol(train.label)))] # Remove Id
+
+feature.names <- feature.names[!(feature.names %in% totalRemovals)]
 feature.names
 
 # Filter out highly correlated features
@@ -206,7 +266,7 @@ param <- list(  objective           = "binary:logistic",
                 num_parallel_tree   = np
 )
 
-nrounds <- 1600 # CHANGE TO >1500
+nrounds <- 1500 # CHANGE TO >1500
 early.stop.round <- 300
 
 cat("Train model with cv\n")
@@ -226,27 +286,50 @@ cat(paste("Best AUC: ", LL,"\n", sep=""))
 bst.cv <- xgb.cv(param = param,
                  data = dall,
                  label = y, 
-                 nfold = 5,
+                 nfold = 10,
                  nrounds = nrounds,
                  prediction = TRUE,
                  verbose = 1)
 
-min.merror.idx = which.min(bst.cv$dt[, test.merror.mean]) 
-min.merror.idx
-bst.cv$dt[min.merror.idx,]
+min.logloss.idx = which.min(bst.cv$dt[, test.logloss.mean]) 
+min.logloss.idx
+bst.cv$dt[min.logloss.idx,]
 
-clf.all <- xgb.train(   params              = param, 
-                        data                = dall, 
-                        nrounds             = clf$bestInd,
-                        watchlist           = watchlist.all,
-                        verbose             = 1,  #1
-                        maximize            = FALSE
-                    )
 
-LL.all <- clf.all$bestScore
-cat(paste("Best AUC on all training data: ", LL.all, "\n", sep=""))
+ensemble <- rep(0, nrow(test))
 
-inputs <- c("nrounds" = clf$bestInd,
+# change to 1:N to get result
+N <- 5
+for (i in 1:N) {
+  clf.all <- xgb.train(   params              = param, 
+                          data                = dall, 
+                          nrounds             = min.logloss.idx,
+                          watchlist           = watchlist.all,
+                          verbose             = 1,  #1
+                          maximize            = FALSE
+  )
+  
+  LL.all <- clf.all$bestScore
+  cat(paste("Best AUC on all training data: ", LL.all, "\n", sep=""))
+  
+  cat("Calculate predictions\n")
+  pred1 <- predict(clf.all,
+                   data.matrix(test[, feature.names]),
+                   ntreelimit = min.logloss.idx)
+  
+#   pred2 <- predict(clf,
+#                    dval,
+#                    ntreelimit = min.logloss.idx)
+  
+  ensemble <- ensemble + pred1
+}
+
+head(ensemble)
+
+predictions <- ensemble / N
+head(predictions)
+
+inputs <- c("nrounds" = min.logloss.idx,
             "eta" = param$eta,
             "max_depth" = param$max_depth,
             "subsample" = param$subsample,
@@ -255,16 +338,7 @@ inputs <- c("nrounds" = clf$bestInd,
             "num_parallel_tree" = param$num_parallel_tree)
 print(inputs)
 
-cat("Calculate predictions\n")
-pred1 <- predict(clf.all,
-                 data.matrix(test[, feature.names]),
-                 ntreelimit = clf$bestInd)
-
-pred2 <- predict(clf,
-                 dval,
-                 ntreelimit = clf$bestInd)
-
-submission <- data.frame(ID = test$ID, PredictedProb = pred1)
+submission <- data.frame(ID = test$ID, PredictedProb = predictions)
 
 cat("Create submission file\n")
 time <- format(Sys.time(),"%Y%m%dT%H%M%S")
@@ -272,7 +346,7 @@ time <- format(Sys.time(),"%Y%m%dT%H%M%S")
 submission <- submission[order(submission$ID), ]
 write.csv(
          submission,
-         paste("data/final/xgboost_forum2_V22v8Transformed_PCA1_PCA2_",
+         paste("data/final/xgboost_forum2_V22v8Transformed_PCA1_PCA2_RemovedSpearmanIG_AvgNA",
                paste(as.character(inputs),collapse="_"),
                "_",
                as.character(LL),
