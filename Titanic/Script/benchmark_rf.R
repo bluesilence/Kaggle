@@ -29,7 +29,9 @@ extractFeatures <- function(data) {
                 "Fare",
                 "Embarked")
   fea <- data[, features]
-  fea$Age[is.na(fea$Age)] <- -1
+  median_age <- median(fea$Age, na.rm = TRUE)
+  fea$Age[is.na(fea$Age)] <- median_age
+  #fea$Age[is.na(fea$Age)] <- -1
   fea$Fare[is.na(fea$Fare)] <- median(fea$Fare, na.rm = TRUE)
   fea$Embarked[fea$Embarked == ""] = "S"
   fea$Sex <- as.factor(fea$Sex)
@@ -51,7 +53,7 @@ sapply(test_features, class)
 levels(test_features$Embarked) <- levels(train$Embarked)
 submission <- data.frame(PassengerId = test$PassengerId)
 submission$Survived <- predict(rf, test_features)
-write.csv(submission, file = "Data/Submission/1_random_forest_r_submission.csv", row.names = FALSE)
+write.csv(submission, file = "Data/Submission/1_random_forest_r_submission_medianAge.csv", row.names = FALSE)
 
 imp <- importance(rf, type = 1)
 featureImportance <- data.frame(Feature = row.names(imp), Importance = imp[, 1])
@@ -66,4 +68,4 @@ p <- ggplot(featureImportance, aes(x = reorder(Feature, Importance), y = Importa
   ggtitle("Random Forest Feature Importance\n") +
   theme(plot.title=element_text(size=18))
 
-ggsave("Plot/2_feature_importance.png", p)
+ggsave("Plot/2_feature_importance_medianAge.png", p)
