@@ -221,12 +221,31 @@ write.csv(submission, file = "Data/Submission/featureEngineering_rf_1100.csv", r
 imp <- importance(rf, type = 1)
 featureImportance <- data.frame(Feature = row.names(imp), Importance = imp[, 1])
 featureImportance[order(featureImportance$Importance, decreasing = T), ]
-top.features.n <- 15
+## To-Do: Use grid search to find the optimal top feature #
+top.features.n <- 25
 top.features <- head(featureImportance[order(featureImportance$Importance, decreasing = T), ], top.features.n)
 
 # ExtraTrees
 library(extraTrees)
 et <- extraTrees(train.normalized[, (colnames(train.normalized) %in% top.features$Feature)], targets, ntree = 150)
 submission.et <- data.frame(PassengerId = test.normalized$PassengerId)
-submission.et$Survived <- predict(et, test.normalized)
-write.csv(submission.et, file = "Data/Submission/featureEngineering_extraTree_150.csv", row.names = FALSE)
+submission.et$Survived <- predict(et, test.normalized[, (colnames(test.normalized) %in% top.features$Feature)])
+write.csv(submission.et, file = "Data/Submission/featureEngineering_extraTree_TopFeature25_150.csv", row.names = FALSE)
+
+# Param tuning
+library(caret)
+# Get all supported model by caret
+names(getModelInfo())
+
+## To-Do: Use StratifiedKFold
+## To-Do: Use regression, then build another linear model for classification
+# Tunable params in caret: mtry, numRandomCuts
+mtry <- seq(top.features.n/8, top.features.n/2, 3)
+numRandomCuts <- seq(1, 2, 1)
+numThreads <- 5
+
+grid <- expand.grid(mtry = mtry, numRandomCuts = numRandomCuts)
+control <- trainControl(method="repeatedcv", number = 5, repeats = 3, verboseIter = T)
+train.data <- data.frame(train.normalized[, (colnames(train.normalized) %in% top.features$Feature)], Label = targets)
+colnames(train.data)
+model <- train(Label ~ ., data = train.data, method = "extraTrees", trControl = control, tuneGrid = grid, numThreads = numThreads)
