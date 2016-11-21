@@ -240,12 +240,54 @@ names(getModelInfo())
 ## To-Do: Use StratifiedKFold
 ## To-Do: Use regression, then build another linear model for classification
 # Tunable params in caret: mtry, numRandomCuts
-mtry <- seq(top.features.n/8, top.features.n/2, 3)
-numRandomCuts <- seq(1, 2, 1)
+numRandomCuts <- 1
 numThreads <- 5
+repeats <- seq(1, 2)
 
-grid <- expand.grid(mtry = mtry, numRandomCuts = numRandomCuts)
-control <- trainControl(method="repeatedcv", number = 5, repeats = 3, verboseIter = T)
-train.data <- data.frame(train.normalized[, (colnames(train.normalized) %in% top.features$Feature)], Label = targets)
-colnames(train.data)
-model <- train(Label ~ ., data = train.data, method = "extraTrees", trControl = control, tuneGrid = grid, numThreads = numThreads)
+tune_params <- function(N)
+{
+  top.features.n <- N
+  top.features <- head(featureImportance[order(featureImportance$Importance, decreasing = T), ], top.features.n)
+  
+  mtry <- seq(as.integer(top.features.n/4), as.integer(top.features.n/2), 2)
+  
+  grid <- expand.grid(mtry = mtry, numRandomCuts = numRandomCuts)
+  control <- trainControl(method="adaptive_cv", verboseIter = T)
+  train.data <- data.frame(train.normalized[, (colnames(train.normalized) %in% top.features$Feature)], Label = targets)
+  
+  model <- train(Label ~ ., data = train.data, method = "extraTrees", trControl = control, tuneGrid = grid, numThreads = numThreads)
+
+  rm(top.features)
+  rm(mtry)
+  rm(grid)
+  rm(control)
+  rm(train.data)
+  
+  return(model)  
+}
+
+featureTotalNum <- nrow(featureImportance)
+
+best_model <- NULL
+best_N <- 15
+
+for (n in seq(best_N, as.integer(featureTotalNum/4))) {
+  temp_model <- tune_params(n)
+  temp_accuracy <- max(temp_model$results$Accuracy)
+  
+  if(is.null(best_model) || max(best_model$results$Accuracy) < temp_accuracy) {
+    best_model <- temp_model
+    best_N <- n
+  }
+  
+  print(paste('Feature # = ', n, ' Accuracy = ', temp_accuracy))
+  print(paste('Best Model: Feature # = ', best_N, ' Accuracy = ', max(best_model$results$Accuracy)))
+  
+  rm(temp_model)
+  rm(temp_accuracy)
+}
+
+top.features <- head(featureImportance[order(featureImportance$Importance, decreasing = T), ], best_N)
+submission.caret <- data.frame(PassengerId = test.normalized$PassengerId)
+submission.caret$Survived <- predict(best_model, test.normalized[, (colnames(test.normalized) %in% top.features$Feature)])
+write.csv(submission.caret, file = "Data/Submission/featureEngineering_extraTree_TopFeatureN_caret.csv", row.names = FALSE)
