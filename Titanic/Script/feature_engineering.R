@@ -214,9 +214,9 @@ rf <- randomForest(train.normalized, targets, ntree = 1100, importance = TRUE)
 # Type of predictors in new data do not match that of the training data.
 #levels(test_features$Sex) <- levels(train$Sex)
 #levels(test_features$Embarked) <- levels(train$Embarked)
-submission <- data.frame(PassengerId = test.normalized$PassengerId)
-submission$Survived <- predict(rf, test.normalized)
-write.csv(submission, file = "Data/Submission/featureEngineering_rf_1100.csv", row.names = FALSE)
+#submission <- data.frame(PassengerId = test.normalized$PassengerId)
+#submission$Survived <- predict(rf, test.normalized)
+#write.csv(submission, file = "Data/Submission/featureEngineering_rf_1100.csv", row.names = FALSE)
 
 imp <- importance(rf, type = 1)
 featureImportance <- data.frame(Feature = row.names(imp), Importance = imp[, 1])
@@ -226,37 +226,57 @@ top.features.n <- 25
 top.features <- head(featureImportance[order(featureImportance$Importance, decreasing = T), ], top.features.n)
 
 # ExtraTrees
-library(extraTrees)
-et <- extraTrees(train.normalized[, (colnames(train.normalized) %in% top.features$Feature)], targets, ntree = 150)
-submission.et <- data.frame(PassengerId = test.normalized$PassengerId)
-submission.et$Survived <- predict(et, test.normalized[, (colnames(test.normalized) %in% top.features$Feature)])
-write.csv(submission.et, file = "Data/Submission/featureEngineering_extraTree_TopFeature25_150.csv", row.names = FALSE)
+#library(extraTrees)
+#et <- extraTrees(train.normalized[, (colnames(train.normalized) %in% top.features$Feature)], targets, ntree = 150)
+#submission.et <- data.frame(PassengerId = test.normalized$PassengerId)
+#submission.et$Survived <- predict(et, test.normalized[, (colnames(test.normalized) %in% top.features$Feature)])
+#write.csv(submission.et, file = "Data/Submission/featureEngineering_extraTree_TopFeature25_150.csv", row.names = FALSE)
 
 # Param tuning
 library(caret)
 # Get all supported model by caret
-names(getModelInfo())
+#names(getModelInfo())
 
-## To-Do: Use StratifiedKFold
+
+## Create Stratefied K folds
+KFolds <- 10
+
+train.data <- data.frame(train.normalized[, (colnames(train.normalized) %in% top.features$Feature)], Label = targets)
+train.data$RowIndex <- strtoi(rownames(train.data))
+train.data.survived <- train.data[train.data$Label == 1, ]
+train.data.dead <- train.data[train.data$Label == 0, ]
+survived_folds <- createFolds(1:nrow(train.data.survived), k = KFolds, returnTrain=TRUE)
+dead_folds <- createFolds(1:nrow(train.data.dead), k = KFolds, returnTrain=TRUE)
+train.data.stratefied_folds.RowIndex <- sapply(1:KFolds, function(i) c(train.data.survived[survived_folds[[i]], ]$RowIndex, train.data.dead[dead_folds[[i]], ]$RowIndex))
+names(train.data.stratefied_folds.RowIndex) <- sapply(1:KFolds, function(x) paste(c("fold", x), collapse=''))
+
 ## To-Do: Use regression, then build another linear model for classification
 # Tunable params in caret: mtry, numRandomCuts
-numRandomCuts <- 1
+numRandomCuts <- 3
 numThreads <- 5
-repeats <- seq(1, 2)
+repeats <- 3
+cutoffs <- list(c(0.3, 0.7), c(0.4, 0.6), c(0.5, 0.5), c(0.6, 0.4), c(0.7, 0.3))
 
-tune_params <- function(N)
+nodesizes <- seq(5, 10, 1)
+  
+tune_params <- function(N, nTrees, cutoff, nodesize)
 {
   top.features.n <- N
   top.features <- head(featureImportance[order(featureImportance$Importance, decreasing = T), ], top.features.n)
   
   mtry <- seq(as.integer(top.features.n/4), as.integer(top.features.n/2), 2)
   
-  grid <- expand.grid(mtry = mtry, numRandomCuts = numRandomCuts)
-  control <- trainControl(method="adaptive_cv", verboseIter = T)
+  grid <- expand.grid(mtry = mtry)
+  #grid <- expand.grid(mtry = mtry, numRandomCuts = numRandomCuts)
+  #control <- trainControl(method="adaptive_cv", verboseIter = T)
+  #control <- trainControl(method="repeatedcv", number = KFolds, repeats = repeats, verboseIter = T)
+  #control <- trainControl(index = train.data.stratefied_folds.RowIndex, method = "repeatedcv", number = KFolds, repeats = repeats, verboseIter = T)
+  control <- trainControl(index = train.data.stratefied_folds.RowIndex, method = "repeatedcv", number = KFolds, repeats = repeats, verboseIter = F)
+  
   train.data <- data.frame(train.normalized[, (colnames(train.normalized) %in% top.features$Feature)], Label = targets)
   
-  model <- train(Label ~ ., data = train.data, method = "extraTrees", trControl = control, tuneGrid = grid, numThreads = numThreads)
-
+  model <- train(Label ~ ., data = train.data, method = "rf", trControl = control, ntree = nTrees, cutoff = cutoff, tuneGrid = grid, numThreads = numThreads)
+  
   rm(top.features)
   rm(mtry)
   rm(grid)
@@ -269,25 +289,42 @@ tune_params <- function(N)
 featureTotalNum <- nrow(featureImportance)
 
 best_model <- NULL
-best_N <- 15
+best_N <- 10
+best_ntree <- 240
+best_cutoff <- NULL
+best_nodesize <- 0
 
-for (n in seq(best_N, as.integer(featureTotalNum/4))) {
-  temp_model <- tune_params(n)
-  temp_accuracy <- max(temp_model$results$Accuracy)
+# To-Do: Use 10 folds
+for (n in seq(best_N, as.integer(featureTotalNum/10))) {
   
-  if(is.null(best_model) || max(best_model$results$Accuracy) < temp_accuracy) {
-    best_model <- temp_model
-    best_N <- n
+  for (ntree in seq(240, 300, 10)) {
+    
+    for (cutoff in cutoffs) {
+      
+      for (nodesize in nodesizes) {
+        temp_model <- tune_params(n, ntree, cutoff, nodesize)
+        temp_accuracy <- max(temp_model$results$Accuracy)
+        
+        if(is.null(best_model) || max(best_model$results$Accuracy) < temp_accuracy) {
+          best_model <- temp_model
+          best_N <- n
+          best_ntree <- ntree
+          best_cutoff <- cutoff
+          best_nodesize <- nodesize
+        }
+        
+        print(paste('Feature # = ', n, ' nTree = ', ntree, ' cutoff = ', cutoff, ' nodesize = ', nodesize, ' Accuracy = ', temp_accuracy))
+        print(paste('Best Model: Feature # = ', best_N, ' nTree = ', best_ntree, ' cutoff = ', best_cutoff, ' nodesize = ', best_nodesize, ' Accuracy = ', max(best_model$results$Accuracy)))
+        
+        rm(temp_model)
+        rm(temp_accuracy)
+      }
+      
+    }
   }
-  
-  print(paste('Feature # = ', n, ' Accuracy = ', temp_accuracy))
-  print(paste('Best Model: Feature # = ', best_N, ' Accuracy = ', max(best_model$results$Accuracy)))
-  
-  rm(temp_model)
-  rm(temp_accuracy)
 }
 
 top.features <- head(featureImportance[order(featureImportance$Importance, decreasing = T), ], best_N)
 submission.caret <- data.frame(PassengerId = test.normalized$PassengerId)
 submission.caret$Survived <- predict(best_model, test.normalized[, (colnames(test.normalized) %in% top.features$Feature)])
-write.csv(submission.caret, file = "Data/Submission/featureEngineering_extraTree_TopFeatureN_caret.csv", row.names = FALSE)
+write.csv(submission.caret, file = "Data/Submission/featureEngineering_rf_TopFeatureN_Stratefied_repeatedCV_caret_nodesize6_ntree290_cutoff0.5_feature14.csv", row.names = FALSE)
