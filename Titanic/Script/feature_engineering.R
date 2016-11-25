@@ -255,9 +255,9 @@ names(train.data.stratefied_folds.RowIndex) <- sapply(1:KFolds, function(x) past
 numRandomCuts <- 3
 numThreads <- 5
 repeats <- 3
-cutoffs <- list(c(0.3, 0.7), c(0.4, 0.6), c(0.5, 0.5), c(0.6, 0.4), c(0.7, 0.3))
+cutoffs <- list(c(0.4, 0.6), c(0.45, 0.55), c(0.5, 0.5))
 
-nodesizes <- seq(5, 10, 1)
+nodesizes <- seq(6, 10, 1)
   
 tune_params <- function(N, nTrees, cutoff, nodesize)
 {
@@ -290,14 +290,14 @@ featureTotalNum <- nrow(featureImportance)
 
 best_model <- NULL
 best_N <- 10
-best_ntree <- 240
+best_ntree <- 280
 best_cutoff <- NULL
 best_nodesize <- 0
 
 # To-Do: Use 10 folds
 for (n in seq(best_N, as.integer(featureTotalNum/10))) {
   
-  for (ntree in seq(240, 300, 10)) {
+  for (ntree in seq(280, 330, 10)) {
     
     for (cutoff in cutoffs) {
       
@@ -327,4 +327,4 @@ for (n in seq(best_N, as.integer(featureTotalNum/10))) {
 top.features <- head(featureImportance[order(featureImportance$Importance, decreasing = T), ], best_N)
 submission.caret <- data.frame(PassengerId = test.normalized$PassengerId)
 submission.caret$Survived <- predict(best_model, test.normalized[, (colnames(test.normalized) %in% top.features$Feature)])
-write.csv(submission.caret, file = "Data/Submission/featureEngineering_rf_TopFeatureN_Stratefied_repeatedCV_caret_nodesize6_ntree290_cutoff0.5_feature14.csv", row.names = FALSE)
+write.csv(submission.caret, file = "Data/Submission/featureEngineering_rf_TopFeatureN_Stratefied_repeatedCV_caret_nodesize9_ntree310_cutoff0.5_feature16.csv", row.names = FALSE)
