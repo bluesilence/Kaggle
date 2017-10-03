@@ -78,3 +78,39 @@ test$Survived[test$Sex == 'female'] <- 1
 test$Survived[test$Sex == 'female' & test$Pclass == 3 & test$Fare >= 20] <- 0
 submit <- data.frame(PassengerId = test$PassengerId, Survived = test$Survived)
 write.csv(submit, file = "../Prediction/predict_3.csv", row.names = FALSE)
+
+
+## Start using decision trees
+library(rpart)
+
+fit <- rpart(
+              Survived ~ Pclass + Sex + Age + SibSp + Parch + Fare + Embarked,
+              data = train,
+              method = "class"
+            )
+plot(fit)
+text(fit)
+
+library(rattle)
+library(rpart.plot)
+library(RColorBrewer)
+
+fancyRpartPlot(fit)
+
+# 4th prediction
+Prediction <- predict(fit, test, type = "class")
+submit <- data.frame(PassengerId = test$PassengerId, Survived = Prediction)
+write.csv(submit, file = "../Prediction/predict_firstdtree.csv", row.names = FALSE)
+
+# Customize control of rpart
+fit <- rpart(
+              Survived ~ Pclass + Sex + Age + SibSp + Parch + Fare + Embarked,
+              data = train,
+              method = "class",
+              control = rpart.control(minsplit = 2, cp = 0)
+            )
+fancyRpartPlot(fit)
+# It's overfitting
+# Interactively trim the tree
+new.fit <- prp(fit, snip = TRUE)$obj
+fancyRpartPlot(new.fit)
