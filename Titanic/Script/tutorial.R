@@ -16,7 +16,9 @@ str(train)
 table(train$Survived)
 # Sex should be imported as factor
 train$Sex <- as.factor(train$Sex)
+test$Sex <- as.factor(test$Sex)
 str(train)
+str(test)
 
 prop.table(table(train$Survived))
 
@@ -80,7 +82,7 @@ submit <- data.frame(PassengerId = test$PassengerId, Survived = test$Survived)
 write.csv(submit, file = "../Prediction/predict_3.csv", row.names = FALSE)
 
 
-## Start using decision trees
+### Part 3: Start using decision trees
 library(rpart)
 
 fit <- rpart(
@@ -114,3 +116,82 @@ fancyRpartPlot(fit)
 # Interactively trim the tree
 new.fit <- prp(fit, snip = TRUE)$obj
 fancyRpartPlot(new.fit)
+
+### Part 4: Feature Engineering
+## Take a glance at Name
+train$Name[1]
+head(train$Name)
+tail(train$Name)
+# Notice the titles indicate the social status of passengers, which may be an important feature
+test$Survived <- NA
+
+## Add intermediate columns in test so that train and test have the same columns
+test$Child <- 0
+test$Child[test$Age < 18] <- 1
+
+test$Fare2 <- '30+'
+test$Fare2[test$Fare < 30 & test$Fare >= 20] <- '20-30'
+test$Fare2[test$Fare < 20 & test$Fare >= 10] <- '10-20'
+test$Fare2[test$Fare < 10] <- '<10'
+
+# Combine train and test sets
+combi <- rbind(train, test)
+strsplit(combi$Name[1], split='[,.]')
+strsplit(combi$Name[1], split='[,.]')[[1]]
+strsplit(combi$Name[1], split='[,.]')[[1]][2]
+# Apply a function to get the title for each name
+combi$Title <- sapply(combi$Name, FUN = function(x) { strsplit(x, split = '[,.]')[[1]][2] })
+# Trim the 1st space
+combi$Title <- sub(' ', '', combi$Title)
+table(combi$Title)
+
+## Combine a few of the most unusual titles
+# Mme: Madame
+# Mlle: Mademoiselle
+# They are pretty similar
+combi$Title[combi$Title %in% c('Mme', 'Mlle')] <- 'Mlle'
+# Military titles or rich fellas: Captain, Don, Major and Sir
+combi$Title[combi$Title %in% c('Capt', 'Don', 'Major', 'Sir')] <- 'Sir'
+# For ladies of noble birth: Dona, Lady, Jonkheer, Countess
+combi$Title[combi$Title %in% c('Dona', 'Lady', 'Jonkheer', 'Countess')] <- 'Lady'
+# Change the Title to factor type
+combi$Title <- factor(combi$Title)
+
+## Create a new feature FamilySize
+combi$FamilySize <- combi$SibSp + combi$Parch + 1
+# Combining the Surname with FamilySize could find ppl in the same family
+combi$Surname <- sapply(combi$Name, FUN = function(x) { strsplit(x, split = '[,.]')[[1]][1]})
+combi$FamilyID <- paste(as.character(combi$FamilySize), combi$Surname, sep = "")
+# Still, the single ppl with the same Surname would have the same FamilyID
+# Our hypothesis is that large families might have trouble sticking together in the panic
+# By knocking out any small families would fix this problem
+combi$FamilyID[combi$FamilySize <= 2] <- 'Small'
+
+table(combi$FamilyID)
+
+famIDs <- data.frame(table(combi$FamilyID))
+# A lot of the # of ppl with the same FamilyID != their FamilySize
+# So let's subset this dataframe to show only those unexpectedly small FamilyID groups
+famIDs <- famIDs[famIDs$Freq <= 2, ]
+# Overwrite these FamilyIDs to be small families
+combi$FamilyID[combi$FamilyID %in% famIDs$Var1] <- 'Small'
+combi$FamilyID <- factor(combi$FamilyID)
+head(combi$FamilyID)
+
+nrow(train)
+train <- combi[1:nrow(train), ]
+test <- combi[(nrow(train)+1):nrow(combi), ]
+
+# 5th prediction
+fit <- rpart(
+              Survived ~ Pclass + Sex + Age + SibSp + Parch + Fare + Embarked + Title + FamilySize + FamilyID,
+              data = train,
+              method = "class"
+            )
+
+fancyRpartPlot(fit)
+# It shows another drawback with decision trees: they are biased to favour factors with many levels
+
+Prediction <- predict(fit, test, type = "class")
+submit <- data.frame(PassengerId = test$PassengerId, Survived = Prediction)
+write.csv(submit, file = "../Prediction/predict_seconddtree.csv", row.names = FALSE)
