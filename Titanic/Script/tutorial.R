@@ -195,3 +195,79 @@ fancyRpartPlot(fit)
 Prediction <- predict(fit, test, type = "class")
 submit <- data.frame(PassengerId = test$PassengerId, Survived = Prediction)
 write.csv(submit, file = "../Prediction/predict_seconddtree.csv", row.names = FALSE)
+
+
+### Part 5: Random Forests
+## R's Random Forest cannot deal with NA's like the rpart does, so we need to fix the NA's first
+summary(combi$Age)
+nrow(combi)
+# 263 out of 1309 rows were missing Age
+# Grow a tree on the subset of the data with Age available
+# To-Do: Leave off FamilyID here as they don't seem to be having much impact on predicting Age
+fitAge <- rpart(Age ~ Pclass + Sex + SibSp + Parch + Fare + Embarked + Title + FamilySize,
+                data = combi[!is.na(combi$Age), ],
+                method = "anova")
+combi$Age[is.na(combi$Age)] <- predict(fitAge, combi[is.na(combi$Age), ])
+# Now all the NAs in Age are gone
+summary(combi$Age)
+
+## Fix missing values for other features
+summary(combi)
+
+## Embark has 2 NA's
+combi$Embarked <- factor(combi$Embarked)
+table(combi$Embarked)
+which(is.na(combi$Embarked))
+# Replace those 2 with 'S' since it's the majority
+combi$Embarked[which(is.na(combi$Embarked))] <- 'S'
+table(combi$Embarked)
+
+# Fare is lacking 1 value
+summary(combi$Fare)
+combi$Fare[which(is.na(combi$Fare))] <- median(combi$Fare, na.rm = TRUE)
+
+# R's Random Forest can only digest factors with up to 32 levels
+unique(combi$FamilyID)
+# So we need to manually reduce the # of levels of FamilyID
+# Increase the cut-off of Small family from 2 to 3 people
+combi$FamilyID2 <- combi$FamilyID
+combi$FamilyID2 <- as.character(combi$FamilyID2)
+combi$FamilyID2[combi$FamilySize <= 3] <- 'Small'
+combi$FamilyID2 <- factor(combi$FamilyID2)
+unique(combi$FamilyID2)
+# FamilyID2 is down to 22 levels
+
+train <- combi[1:nrow(train), ]
+test <- combi[(nrow(train)+1):nrow(combi), ]
+
+library(randomForest)
+set.seed(415)
+fit <- randomForest(as.factor(Survived) ~ Pclass + Sex + Age + SibSp + Parch + Fare +
+                                          Embarked + Title + FamilySize + FamilyID2,
+                    data = train,
+                    importance = TRUE,
+                    ntree = 2000)
+                    
+varImpPlot(fit)
+
+# 6th prediction
+Prediction <- predict(fit, test)
+submit <- data.frame(PassengerId = test$PassengerId, Survived = Prediction)
+write.csv(submit, file = "../Prediction/predict_firstforest.csv", row.names = FALSE)
+# The result is not very good.
+# On smaller datasets, sometimes a fancier model won't beat a simple one
+# Let's try a forest of conditional inference trees
+library(party)
+set.seed(415)
+# mtry: the # of variables to sample at each node
+# Since cforest is able to handle factors with more levels than Random Forests can, let's go back to FamilyID
+fit <- cforest(as.factor(Survived) ~ Pclass + Sex + Age + SibSp + Parch + Fare +
+                                     Embarked + Title + FamilySize + FamilyID,
+               data = train,
+               controls = cforest_unbiased(ntree = 2000, mtry = 3))
+
+# 7th prediction
+# The prediction function requires a few extra nudgfes for cforest
+Prediction <- predict(fit, test, OOB = TRUE, type = "response")
+submit <- data.frame(PassengerId = test$PassengerId, Survived = Prediction)
+write.csv(submit, file = "../Prediction/predict_cforest.csv", row.names = FALSE)
