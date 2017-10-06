@@ -476,3 +476,64 @@ Prediction <- predict(fit, test, OOB = TRUE, type = "response")
 submit <- data.frame(PassengerId = test$PassengerId, Survived = Prediction)
 write.csv(submit, file = "../Prediction/predict_hascabin_deck_cforest.csv", row.names = FALSE)
 # Awesome! The score is 0.82296!!
+
+## Explore Mothers' Survival rate: https://www.kaggle.com/mrisdal/exploring-survival-on-the-titanic
+combi$IsMother <- FALSE
+combi$IsMother[combi$Sex == 'female' & combi$Parch > 0 & combi$Age > 18 & combi$Title != 'Miss'] <- TRUE
+table(combi$IsMother)
+
+train <- combi[!is.na(combi$Survived), ]
+table(train$IsMother)
+prop.table(table(train$IsMother, train$Survived))
+# It seems Mother has higher chance of Survival
+
+fit <- cforest(as.factor(Survived) ~ Pclass + Sex + Age + SibSp + Parch + Fare +
+                                     Embarked + Title + FamilySize + FamilyID +
+                                     HasCabin + Deck + IsMother,
+               data = train,
+               controls = cforest_unbiased(ntree = 2000, mtry = 3))
+
+# 13th prediction
+test <- combi[is.na(combi$Survived), ]
+Prediction <- predict(fit, test, OOB = TRUE, type = "response")
+submit <- data.frame(PassengerId = test$PassengerId, Survived = Prediction)
+write.csv(submit, file = "../Prediction/predict_hascabin_deck_ismother_cforest.csv", row.names = FALSE)
+# The score is not better than the 12th prediction
+
+## Explore spouses
+unique(combi$Title)
+nrow(combi[combi$SibSp > 0 & combi$Title == 'Mrs', ])
+nrow(combi[combi$SibSp > 0 & combi$Title == 'Mr', ])
+MrsSurname <- unique(data.frame(combi$FamilyID[combi$SibSp > 0 & combi$Title == 'Mrs']))
+names(MrsSurname) <- c('FamilyID')
+MrSurname <- unique(data.frame(combi$FamilyID[combi$SibSp > 0 & combi$Title == 'Mr']))
+names(MrSurname) <- c('FamilyID')
+SpouseFamilyID <- merge(x = MrsSurname, y = MrSurname, by = 'FamilyID')
+SpouseFamilyID$HasSpouse <- TRUE
+combi <- merge(combi, SpouseFamilyID, by = 'FamilyID', all.x = TRUE)
+combi$HasSpouse <- !is.na(combi$HasSpouse.y)
+
+train <- combi[!is.na(combi$Survived), ]
+table(train$HasSpouse)
+prop.table(table(train$HasSpouse, train$Survived))
+combi$HasHusband <- combi$Title == 'Mrs' & combi$HasSpouse
+train <- combi[!is.na(combi$Survived), ]
+table(train$HasHusband)
+prop.table(table(train$HasHusband, train$Survived))
+# It seems wives have higher chance of survival if their husbands are onboard
+combi$HasWife <- combi$Title == 'Mr' & combi$HasSpouse
+train <- combi[!is.na(combi$Survived), ]
+prop.table(table(train$HasWife, train$Survived))
+# It seems husbands have higher chance of survival if their wives are NOT onboard
+
+fit <- cforest(as.factor(Survived) ~ Pclass + Sex + Age + SibSp + Parch + Fare +
+                                     Embarked + Title + FamilySize + FamilyID +
+                                     HasCabin + Deck + IsMother + HasWife,
+               data = train,
+               controls = cforest_unbiased(ntree = 2000, mtry = 3))
+
+# 13th prediction
+test <- combi[is.na(combi$Survived), ]
+Prediction <- predict(fit, test, OOB = TRUE, type = "response")
+submit <- data.frame(PassengerId = test$PassengerId, Survived = Prediction)
+write.csv(submit, file = "../Prediction/predict_hascabin_deck_ismother_haswife_cforest.csv", row.names = FALSE)
