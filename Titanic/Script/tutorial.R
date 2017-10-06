@@ -271,3 +271,208 @@ fit <- cforest(as.factor(Survived) ~ Pclass + Sex + Age + SibSp + Parch + Fare +
 Prediction <- predict(fit, test, OOB = TRUE, type = "response")
 submit <- data.frame(PassengerId = test$PassengerId, Survived = Prediction)
 write.csv(submit, file = "../Prediction/predict_cforest.csv", row.names = FALSE)
+
+
+### Further exploration
+## Ticket
+table(combi$Ticket)
+unique(combi$Ticket)
+get_index_of_last_occurrence_of_ch <- function(str, reg_ch)
+{
+  reg <- paste(reg_ch, "[^", reg_ch, "]*$", sep = "")
+  #print(reg)
+  regexpr(reg, str)[1]
+}
+
+get_substr_before_last_occurrence_of_ch <- function(str, reg_ch)
+{
+  last_occurrence_index <- get_index_of_last_occurrence_of_ch(str, reg_ch)
+  #print(last_occurrence_index)
+  
+  if (last_occurrence_index < 0) # No reg_ch found
+  {
+    str
+  }
+  else
+  {
+    result <- substring(str, 0, last_occurrence_index-1)
+    # Trim leading/trailing whitespace
+    trimws(result)
+    
+    print(result)
+  }
+}
+
+get_ticket_title <- function(ticket)
+{
+  if (grepl(' ', ticket, fixed = TRUE))
+  {
+    raw_title <- get_substr_before_last_occurrence_of_ch(ticket, ' ')
+    gsub('\\.', '', raw_title)
+  }
+  else
+  {
+    ''
+  }
+}
+
+combi$TicketTitle <- sapply(combi$Ticket, FUN = get_ticket_title)
+unique(combi$TicketTitle)
+train <- combi[1:nrow(train), ]
+table(train$TicketTitle, train$Survived)
+prop.table(table(train$TicketTitle, train$Survived))
+# There seems to be some dups at the title that can be manually corrected
+combi$TicketTitle[combi$TicketTitle == 'A4'] <- 'A/4'
+combi$TicketTitle[combi$TicketTitle == 'A5'] <- 'A/5'
+combi$TicketTitle[combi$TicketTitle == 'STON/O 2'] <- 'STON/O2'
+combi$TicketTitle[combi$TicketTitle == 'WEP'] <- 'WE/P'
+combi$TicketTitle[combi$TicketTitle == 'SC/PARIS'] <- 'SC/Paris'
+combi$TicketTitle[combi$TicketTitle == 'SOC'] <- 'SO/C'
+
+unique(combi$TicketTitle)
+combi$TicketTitle <- as.factor(combi$TicketTitle)
+train <- combi[1:nrow(train), ]
+table(train$TicketTitle, train$Survived)
+
+fit <- cforest(as.factor(Survived) ~ Pclass + Sex + Age + SibSp + Parch + Fare +
+                                     Embarked + Title + FamilySize + FamilyID + TicketTitle,
+               data = train,
+               controls = cforest_unbiased(ntree = 2000, mtry = 3))
+
+# 8th prediction
+test <- combi[(nrow(train)+1):nrow(combi), ]
+Prediction <- predict(fit, test, OOB = TRUE, type = "response")
+submit <- data.frame(PassengerId = test$PassengerId, Survived = Prediction)
+write.csv(submit, file = "../Prediction/predict_tickettitle_cforest.csv", row.names = FALSE)
+# The score is the same as the 7th prediction
+# Maybe the # of training cases for each TicketTitle is too small to impact the model
+
+# Try using the sub title before '/'
+get_ticket_title2 <- function(ticket_title)
+{
+  if (grepl('/', ticket_title, fixed = TRUE))
+  {
+    get_substr_before_last_occurrence_of_ch(ticket_title, '/')
+  }
+  else
+  {
+    ticket_title
+  }
+}
+
+combi$TicketTitle <- as.character(combi$TicketTitle)
+combi$TicketTitle2 <- sapply(combi$TicketTitle, FUN = get_ticket_title2)
+table(combi$TicketTitle2)
+# "A 2" comes from "A. 2. 39186", seems to be "A"
+combi$TicketTitle2[combi$TicketTitle2 == "A 2"] <- "A"
+combi$TicketTitle <- as.factor(combi$TicketTitle)
+combi$TicketTitle2 <- as.factor(combi$TicketTitle2)
+train <- combi[1:nrow(train), ]
+table(train$TicketTitle2, train$Survived)
+
+fit <- cforest(as.factor(Survived) ~ Pclass + Sex + Age + SibSp + Parch + Fare +
+                                     Embarked + Title + FamilySize + FamilyID + TicketTitle2,
+               data = train,
+               controls = cforest_unbiased(ntree = 2000, mtry = 3))
+
+# 9th prediction
+test <- combi[(nrow(train)+1):nrow(combi), ]
+Prediction <- predict(fit, test, OOB = TRUE, type = "response")
+submit <- data.frame(PassengerId = test$PassengerId, Survived = Prediction)
+write.csv(submit, file = "../Prediction/predict_tickettitle2_cforest.csv", row.names = FALSE)
+# The score is the same as the 7th prediction
+
+combi$TicketHasTitle <- (combi$TicketTitle != '')
+train <- combi[1:nrow(train), ]
+prop.table(table(train$TicketHasTitle, train$Survived))
+cor(train$TicketHasTitle, train$Survived)
+# There is little correlation between TicketTitle and Survived
+# That explains why the 8th and 9th prediction are not better than the 7th
+
+
+## Cabin numbers
+unique(combi$Cabin)
+# There are some multiple Cabins
+combi$HasCabin <- !is.na(combi$Cabin)
+train <- combi[1:nrow(train), ]
+prop.table(table(train$HasCabin, train$Survived))
+cor(train$HasCabin, train$Survived)
+# There is some impact of Cabin on Survived
+fit <- cforest(as.factor(Survived) ~ Pclass + Sex + Age + SibSp + Parch + Fare +
+                                     Embarked + Title + FamilySize + FamilyID + HasCabin,
+               data = train,
+               controls = cforest_unbiased(ntree = 2000, mtry = 3))
+
+# 10th prediction
+test <- combi[(nrow(train)+1):nrow(combi), ]
+Prediction <- predict(fit, test, OOB = TRUE, type = "response")
+submit <- data.frame(PassengerId = test$PassengerId, Survived = Prediction)
+write.csv(submit, file = "../Prediction/predict_hascabin_cforest.csv", row.names = FALSE)
+# Congratulations! The score is 0.81818, better than 7th prediction!
+
+# Still, we can dig deeper into Cabin
+# If a big family's cabins are far apart, some of the family members may be missing due to the chaos
+library(dplyr)
+filter(combi, combi$Cabin == "B52 B54 B56")$FamilyID
+filter(combi, combi$Cabin == "B52 B54 B56")$FamilySize
+# Weird, this guy is by himself but has 3 cabins
+
+filter(combi, combi$Cabin == "C62 C64")$FamilyID
+filter(combi, combi$Cabin == "C62 C64")$FamilySize
+# This family has 2 members, still small family
+
+# Since we only consider big families, let's filter out small families
+unique(combi$Cabin[combi$FamilySize != 'Small'])
+
+# Check the biggest family onboard
+combi$Cabin[combi$FamilyID == '11Sage']
+# This family doesn't have Cabin
+
+# Check big families with Cabin
+bigFamiliesWithCabin <- filter(combi, !is.na(combi$Cabin) & combi$FamilyID != 'Small')
+
+# Create a table with both Cabin and FamilyID to see how many cabins a family has
+familyCabinTable <- data.frame(table(bigFamiliesWithCabin$Cabin, bigFamiliesWithCabin$FamilyID))
+familyCabinTable$InCabin <- as.integer(familyCabinTable$Freq > 0)
+# Count how many cabins a family has
+familyCabinCount <- aggregate(InCabin ~ Var2, data = familyCabinTable, FUN = sum)
+names(familyCabinCount) <- c("FamilyID", "CabinCount")
+combi <- merge(x = combi, y = familyCabinCount, by = "FamilyID", all.x = TRUE)
+train <- combi[!is.na(combi$Survived), ]
+prop.table(table(train$CabinCount, train$Survived))
+# It seems families that all the members in only 1 cabin have higher chance of Survived
+
+# There is some impact of CabinCount on Survived
+fit <- cforest(as.factor(Survived) ~ Pclass + Sex + Age + SibSp + Parch + Fare +
+                                     Embarked + Title + FamilySize + FamilyID +
+                                     CabinCount,
+               data = train,
+               controls = cforest_unbiased(ntree = 2000, mtry = 3))
+
+# 11th prediction
+test <- combi[is.na(combi$Survived), ]
+Prediction <- predict(fit, test, OOB = TRUE, type = "response")
+submit <- data.frame(PassengerId = test$PassengerId, Survived = Prediction)
+write.csv(submit, file = "../Prediction/predict_cabincount_cforest.csv", row.names = FALSE)
+# The score is 0.81818, the same as the 10th prediction
+
+# Check the deck of Cabin
+combi$Deck <- as.factor(sapply(combi$Cabin, function(x) strsplit(x, NULL)[[1]][1]))
+table(combi$Deck)
+
+train <- combi[!is.na(combi$Survived), ]
+prop.table(table(train$Deck, train$Survived))
+table(train$Deck)
+
+fit <- cforest(as.factor(Survived) ~ Pclass + Sex + Age + SibSp + Parch + Fare +
+                                     Embarked + Title + FamilySize + FamilyID +
+                                     HasCabin + Deck,
+               data = train,
+               controls = cforest_unbiased(ntree = 2000, mtry = 3))
+
+# 12th prediction
+test <- combi[is.na(combi$Survived), ]
+Prediction <- predict(fit, test, OOB = TRUE, type = "response")
+submit <- data.frame(PassengerId = test$PassengerId, Survived = Prediction)
+write.csv(submit, file = "../Prediction/predict_hascabin_deck_cforest.csv", row.names = FALSE)
+# Awesome! The score is 0.82296!!
